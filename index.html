@@ -20,6 +20,46 @@
             margin: 0;
         }
         </style>
+		<style>
+  /* Liten “Finn meg”-knapp som Leaflet-kontroll (glass-effekt) */
+  .leaflet-control.locate-control {
+    border: none;
+    padding: 6px;
+    width: 40px; 
+    height: 40px;
+    border-radius: 10px;
+
+    background: rgba(255,255,255,0.25);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .leaflet-control.locate-control button {
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    border: none;
+    border-radius: 6px;
+    background: #ffffffd9;
+    cursor: pointer;
+    font-size: 16px;   /* viser 📍-ikon */
+  }
+  .leaflet-control.locate-control button:hover { background: #fff; }
+  .leaflet-control.locate-control button.active { background: #1368CE; color: #fff; }
+
+  /* Valgfritt: litt mørkere chip i mørk modus */
+  @media (prefers-color-scheme: dark) {
+    .leaflet-control.locate-control {
+      background: rgba(32,32,32,0.35);
+    }
+  }
+</style>
+``
         <title></title>
     </head>
     <body>
@@ -40,7 +80,94 @@
         <script src="js/leaflet-measure.js"></script>
         <script src="data/Fiksedegeometrier_1.js"></script>
         <script>
-        var map = L.map('map', {
+        var map = L.map('map', {<script>
+  // --- GPS-sporing (Leaflet + Geolocation API) -----------------------------
+
+  // Beholdere for posisjonsmarkør og nøyaktighetssirkel
+  let locateMarker = null;
+  let locateCircle = null;
+  let tracking = false;     // toggles av/på
+  let firstFixDone = false; // så vi ikke "snapper" kartet for hvert oppdatering
+
+  // 1) Definer en Leaflet-kontroll med en knapp
+  const LocateControl = L.Control.extend({
+    options: { position: 'topright' }, // endre til 'topleft' hvis ønskelig
+    onAdd: function (map) {
+      const container = L.DomUtil.create('div', 'leaflet-control locate-control');
+      const btn = L.DomUtil.create('button', '', container);
+      btn.type = 'button';
+      btn.title = 'Finn posisjonen min (på/av)';
+      btn.innerHTML = '📍';
+
+      // Unngå at klikk på knappen bobler til kartet
+      L.DomEvent.disableClickPropagation(container);
+      L.DomEvent.on(btn, 'click', function (e) {
+        L.DomEvent.stop(e);
+
+        if (!tracking) {
+          // Start "watch"
+          tracking = true;
+          firstFixDone = false;
+          btn.classList.add('active');
+
+          map.locate({
+            watch: true,
+            setView: false,           // vi styrer første setView selv
+            enableHighAccuracy: true, // mer nøyaktig
+            maxZoom: 17
+          });
+        } else {
+          // Stopp "watch"
+          tracking = false;
+          btn.classList.remove('active');
+          map.stopLocate();
+          if (locateMarker) { map.removeLayer(locateMarker); locateMarker = null; }
+          if (locateCircle) { map.removeLayer(locateCircle); locateCircle = null; }
+        }
+      });
+
+      return container;
+    }
+  });
+
+  // 2) Legg kontrollen inn i kartet
+  map.addControl(new LocateControl());
+
+  // 3) Reager på posisjon funnet
+  map.on('locationfound', function (e) {
+    // Oppdater/lag marker
+    if (locateMarker) {
+      locateMarker.setLatLng(e.latlng);
+    } else {
+      locateMarker = L.marker(e.latlng, { title: 'Din posisjon' }).addTo(map);
+    }
+
+    // Oppdater/lag nøyaktighetssirkel
+    if (locateCircle) {
+      locateCircle.setLatLng(e.latlng).setRadius(e.accuracy);
+    } else {
+      locateCircle = L.circle(e.latlng, {
+        radius: e.accuracy,
+        color: '#1368CE',
+        weight: 2,
+        fillColor: '#1368CE',
+        fillOpacity: 0.15
+      }).addTo(map);
+    }
+
+    // Sentrer kartet kun første gang vi får fix (behageligere enn å snappe hele tiden)
+    if (!firstFixDone) {
+      firstFixDone = true;
+      const targetZoom = Math.min(17, map.getZoom() || 17);
+      map.setView(e.latlng, targetZoom);
+    }
+  });
+
+  // 4) Feilhåndtering
+  map.on('locationerror', function (e) {
+    alert('Kunne ikke hente posisjon. Tips: Gi nettleseren tillatelse til posisjon, og forsikre deg om at siden lastes via HTTPS.');
+  });
+</script>
             zoomControl:false, maxZoom:28, minZoom:1
         }).fitBounds([[59.766484569303195,9.833903970664549],[59.8152365260012,10.048188112350752]]);
         var hash = new L.Hash(map);
